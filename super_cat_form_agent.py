@@ -45,7 +45,6 @@ class SuperCatFormAgent(BaseAgent):
 
     def execute(self, stray) -> AgentOutput:
         if not self.form_tools:
-            log.debug("No form tools found - skipping agent execution.")
             return AgentOutput()
         try:
             return self._process_tools(stray)
@@ -58,7 +57,7 @@ class SuperCatFormAgent(BaseAgent):
 
         llm_action = self._execute_tool_selection_chain(stray, TOOL_PROMPT)
 
-        log.debug(f"Selected tool: {llm_action.action}")
+        log.debug(f"Selected tool: {llm_action}")
 
         result = self._execute_tool(llm_action)
 
@@ -108,17 +107,14 @@ class SuperCatFormAgent(BaseAgent):
             return AgentOutput(output="")
 
         try:
-            log.info(f"Executing form tool `{chosen_procedure.__name__}`")
             bound_method = chosen_procedure.__get__(self.form_instance, self.form_instance.__class__)
             sig = inspect.signature(chosen_procedure)
             params = list(sig.parameters.keys())
-
             tool_output = (
                 bound_method() if len(params) == 1 else bound_method(llm_action.action_input)
             )
-            log.info(f"Tool output: {tool_output}")
             return AgentOutput(
-                output=tool_output,
+                output=str(tool_output),
                 return_direct=chosen_procedure._return_direct,
                 intermediate_steps=[
                     ((llm_action.action, llm_action.action_input), tool_output)

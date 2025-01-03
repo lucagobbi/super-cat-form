@@ -6,9 +6,12 @@ from cat.experimental.form import form, CatForm, CatFormState
 from cat.plugins.super_cat_form.super_cat_form_agent import SuperCatFormAgent
 from cat.log import log
 
+from datetime import datetime
 
-def form_tool(func, return_direct=False):
-    """Decorator to register methods as form tools."""
+
+def form_tool(func=None, *, return_direct=False):
+    if func is None:
+        return lambda f: form_tool(f, return_direct=return_direct)
 
     @wraps(func)
     def wrapper(self, *args, **kwargs):
@@ -57,10 +60,11 @@ class SuperCatForm(CatForm):
             # Execute agent if form tools are present
             if len(self._get_form_tools()) > 0:
                 agent_output = self.tool_agent.execute(self.cat)
-                if agent_output.return_direct:
-                    return agent_output.output
-                else:
-                    self.update()
+                log.critical(f"Agent output: {agent_output}")
+                if agent_output.output:
+                    if agent_output.return_direct:
+                        return {"output": agent_output.output}
+                self.update()
             else:
                 self.update()
 
@@ -111,18 +115,18 @@ class PizzaForm(SuperCatForm):
     ]
     ask_confirm = False
 
-    @form_tool
-    def get_form_data(self):
-        """Useful to print current form data. Input is always None."""
-        log.critical(f"********* Current form data: {self.form_data}")
-        self.cat.send_ws_message(f"Current form data: {self.form_data}")
-        return self.form_data
+    @form_tool(return_direct=True)
+    def get_menu(self):
+        """Useful to get the menu. User may ask: what is the menu? Input is always None."""
+        return ["Margherita", "Pepperoni", "Hawaiian"]
 
-    @form_tool
-    def print_number(self, number):
-        """Useful to print current form data. Input is a valid number."""
-        self.cat.send_ws_message(f"Number: {number}")
-        return number
+    @form_tool(return_direct=True)
+    def ask_for_daily_promotions(self):
+        """Useful to get any daily promotions. User may ask: what are the daily promotions? Input is always None."""
+        if datetime.now().weekday() == 0:
+            return "Free delivery"
+        elif datetime.now().weekday() == 4:
+            return "Free Pepperoni"
 
     def submit(self, form_data):
         return {

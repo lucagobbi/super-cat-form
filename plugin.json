@@ -1,10 +1,10 @@
 {
-    "name": "Supercatform",
+    "name": "SuperCatForm",
     "version": "0.0.1",
-    "description": "Description of supercatform.",
-    "author_name": "Me",
-    "author_url": "https://mywebsite.me",
-    "plugin_url": "https://github.com/my_name/supercatform",
-    "tags": "cat, template, example",
-    "thumb": "https://raw.githubusercontent.com/my_repo_path/supercatform.png"
+    "description": "Supercharge your conversational forms with enhanced capabilities, real-time interactions, and a sleek user experience.",
+    "author_name": "Luca Gobbi",
+    "author_url": "https://github.com/lucagobbi",
+    "plugin_url": "https://github.com/lucagobbi/super-cat-form",
+    "tags": "cat, form, tools, conversational",
+    "thumb": "https://raw.githubusercontent.com/lucagobbi/super-cat-form/main/assets/supercatform.png"
 }
