@@ -23,6 +23,9 @@ def form_tool(func=None, *, return_direct=False):
 
 
 class SuperCatForm(CatForm):
+    """
+    SuperCatForm is the CatForm class that extends the functionality of the original CatForm class.
+    """
 
     def __init__(self, cat):
         super().__init__(cat)
@@ -82,53 +85,18 @@ class SuperCatForm(CatForm):
         return self._model
 
 
-def super_cat_form(Form: type) -> type:
-    Form._autopilot = True
-    if Form.name is None:
-        Form.name = Form.__name__
+def super_cat_form(form: SuperCatForm) -> SuperCatForm:
+    """
+    Decorator to mark a class as a SuperCatForm.
+    """
+    form._autopilot = True
+    if form.name is None:
+        form.name = form.__name__
 
-    if Form.triggers_map is None:
-        Form.triggers_map = {
-            "start_example": Form.start_examples,
-            "description": [f"{Form.name}: {Form.description}"],
+    if form.triggers_map is None:
+        form.triggers_map = {
+            "start_example": form.start_examples,
+            "description": [f"{form.name}: {form.description}"],
         }
 
-    return Form
-
-
-class PizzaOrder(BaseModel):
-    pizza_type: str
-    address: str
-
-
-@super_cat_form
-class PizzaForm(SuperCatForm):
-    description = "Pizza Order"
-    model_class = PizzaOrder
-    start_examples = [
-        "order a pizza!",
-        "I want pizza"
-    ]
-    stop_examples = [
-        "stop pizza order",
-        "not hungry anymore",
-    ]
-    ask_confirm = False
-
-    @form_tool(return_direct=True)
-    def get_menu(self):
-        """Useful to get the menu. User may ask: what is the menu? Input is always None."""
-        return ["Margherita", "Pepperoni", "Hawaiian"]
-
-    @form_tool(return_direct=True)
-    def ask_for_daily_promotions(self):
-        """Useful to get any daily promotions. User may ask: what are the daily promotions? Input is always None."""
-        if datetime.now().weekday() == 0:
-            return "Free delivery"
-        elif datetime.now().weekday() == 4:
-            return "Free Pepperoni"
-
-    def submit(self, form_data):
-        return {
-            "output": f"Form submitted"
-        }
+    return form
