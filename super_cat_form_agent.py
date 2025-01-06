@@ -9,32 +9,9 @@ from langchain_core.runnables import RunnableConfig, RunnableLambda
 from cat.agents import BaseAgent, AgentOutput
 from cat.looking_glass.output_parser import ChooseProcedureOutputParser, LLMAction
 from cat.looking_glass.callbacks import ModelInteractionHandler
+from cat.plugins.super_cat_form import prompts
 from cat.log import log
 from cat import utils
-
-TOOL_PROMPT = """
-Create a JSON with the correct "action" and "action_input" to help the Human during form compilation. 
-This conversation happens while the user is filling out a form, and they might express intentions or requests during this process.
-
-Current form data: {form_data}
-
-You can use one of these actions: 
-{tools}
-
-- "no_action": Use this action when:
-  1. The user wants to continue with the normal form compilation without any parallel actions
-  2. The user's message is a direct response to a form question
-  3. No other relevant action is needed at this point in the conversation
-  Input is always null for this action.
-
-## The JSON must have the following structure:
-
-```json
-{{
-    "action": // str - The name of the action to take, should be one of [{tool_names}, "no_action"]
-    "action_input": // str or null - The input to the action according to its description
-}}
-"""
 
 class SuperCatFormAgent(BaseAgent):
     """Agent that executes form-based tools based on conversation context."""
@@ -55,7 +32,7 @@ class SuperCatFormAgent(BaseAgent):
 
     def _process_tools(self, stray) -> AgentOutput:
 
-        llm_action = self._execute_tool_selection_chain(stray, TOOL_PROMPT)
+        llm_action = self._execute_tool_selection_chain(stray, prompts.TOOL_PROMPT)
 
         log.debug(f"Selected tool: {llm_action}")
 

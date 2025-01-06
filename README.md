@@ -10,32 +10,48 @@ SuperCatForm is a powerful, strongly opinionated, and flexible Cheshire Cat plug
 
 - **Tool calling during form execution**: SuperCatForm enables real-time interactions by allowing tools to be called during form execution. For instance, a restaurant order form can fetch the latest menu, a travel booking form can check live flight availability, or a shopping assistant form can retrieve daily discounts. This turns forms from simple data collectors into smart conversational agents.
 
+- **Nested fields support**: Effortlessly manage complex data structures for richer user interactions with nested fields and data structures.
+
+- **Full Pydantic validation support**: Ensure that validation rules are applied both in the extraction phase (i.e. inserted in the extraction prompt) and during validation phase.
 
 - **JSON schema support** (Coming soon...): Streamline form validation and consistency with schema-based definitions.
 
-
-- **Nested fields support** (Coming soon...): Effortlessly manage complex data structures for richer user interactions.
 
 ## Usage
 
 1. Install the SuperCatForm in your Cheshire Cat instance from the registry.
 2. Create a new plugin.
 3. Create a form class as you would do with traditional `CatForm`.
-4. Replace the `@form` decorator with `@super_cat_form`.
-5. Add useful methods to the class and mark them with `@form_tool`.
-6. Have fun!
+4. Define your model class leveraging all the power of Pydantic.
+5. Replace the `@form` decorator with `@super_cat_form`.
+6. Add useful methods to the class and mark them with `@form_tool`.
+7. Have fun!
 
 
 ```python
-from pydantic import BaseModel
+from typing import Literal, List
+from pydantic import BaseModel, Field
 from datetime import datetime
 
 from cat.plugins.super_cat_form.super_cat_form import SuperCatForm, form_tool, super_cat_form
 
 
+class Address(BaseModel):
+    street: str
+    city: str
+
+
+class Pizza(BaseModel):
+    pizza_type: str = Field(description="Type of pizza")
+    size: Literal["standard", "large"] = Field(default="standard")
+    extra_toppings: List[str] = Field(default_factory=list)
+
+
 class PizzaOrder(BaseModel):
-    pizza_type: str
-    address: str
+    pizzas: List[Pizza]
+    address: Address
+    due_date: datetime = Field(description="Datetime when the pizza should be delivered - format YYYY-MM-DD HH:MM")
+
 
 
 @super_cat_form
@@ -66,8 +82,16 @@ class PizzaForm(SuperCatForm):
             return "Free Pepperoni"
 
     def submit(self, form_data):
+        
+        form_result = self.form_data_validated
+
+        if form_result is None:
+            return {
+                "output": "Invalid form data"
+            }
+
         return {
-            "output": f"Form submitted: {form_data}"
+            "output": f"Ok! {form_result.pizzas} will be delivered to {form_result.address} on {form_result.due_date.strftime('%A, %B %d, %Y at %H:%M')}"
         }
 
 

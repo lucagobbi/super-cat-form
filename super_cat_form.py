@@ -1,13 +1,15 @@
 import inspect
 from functools import wraps
-from pydantic import BaseModel
+from typing import Dict, Optional
+from pydantic import BaseModel, ValidationError
+
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import PromptTemplate
 
 from cat.experimental.form import form, CatForm, CatFormState
 from cat.plugins.super_cat_form.super_cat_form_agent import SuperCatFormAgent
+from cat.plugins.super_cat_form import prompts
 from cat.log import log
-
-from datetime import datetime
-
 
 def form_tool(func=None, *, return_direct=False):
     if func is None:
@@ -31,6 +33,42 @@ class SuperCatForm(CatForm):
         super().__init__(cat)
         self.tool_agent = SuperCatFormAgent(self._get_form_tools(), self)
 
+    def _get_validated_form_data(self) -> Optional[BaseModel]:
+        """
+        Safely attempts to get validated form data.
+        Returns None if the form is incomplete or invalid.
+
+        Returns:
+            Optional[BaseModel]: Validated Pydantic model if successful, None otherwise
+        """
+        try:
+            return self.model_getter()(**self._model)
+        except ValidationError:
+            return None
+
+    def _ner(self) -> Dict:
+        """
+        Executes NER using LangChain JsonOutputParser on current form
+
+        Returns:
+            Dict: NER result
+        """
+        prompt_params = {
+            "chat_history": self.cat.stringify_chat_history(),
+            "form_description": f"{self.name} - {self.description}"
+        }
+        parser = JsonOutputParser(pydantic_object=self.model_class)
+        prompt = PromptTemplate(
+            template=prompts.NER_PROMPT,
+            input_variables=list(prompt_params.keys()),
+            partial_variables={"format_instructions":
+                                   parser.get_format_instructions()},
+        )
+        chain = prompt | self.cat._llm | parser
+        ner_result = chain.invoke(prompt_params)
+        log.critical(f"NER Result: {ner_result}")
+        return ner_result
+
     @classmethod
     def _get_form_tools(cls):
         """
@@ -42,6 +80,64 @@ class SuperCatForm(CatForm):
                 if getattr(func, '_is_form_tool', False):
                     form_tools[name] = func
         return form_tools
+
+
+    def sanitize(self, model: Dict) -> Dict:
+        """
+        Sanitize the model while preserving nested structures.
+        Only removes explicitly null values.
+
+        Args:
+            model: Dictionary containing form data
+
+        Returns:
+            Dict: Sanitized form data
+        """
+
+        def _sanitize_nested(data):
+            if isinstance(data, dict):
+                return {
+                    k: _sanitize_nested(v)
+                    for k, v in data.items()
+                    if v not in (None, "", "None", "null", "lower-case", "unknown", "missing")
+                }
+            return data
+
+        return _sanitize_nested(model)
+
+    def validate(self):
+        """
+        Override the validate method to properly handle nested structures
+        while preserving partial data.
+        """
+        self._missing_fields = []
+        self._errors = []
+
+        try:
+            self.model_getter()(**self._model)
+            self._state = CatFormState.COMPLETE
+
+        except ValidationError as e:
+            for error in e.errors():
+                field_path = '.'.join(str(loc) for loc in error['loc'])
+                if error['type'] == 'missing':
+                    self._missing_fields.append(field_path)
+                else:
+                    self._errors.append(f'{field_path}: {error["msg"]}')
+
+            self._state = CatFormState.INCOMPLETE
+
+    def extract(self):
+        """
+        Override the extract method to include NER with LangChain JsonOutputParser
+        """
+        try:
+            output_model = self._ner()
+        except Exception as e:
+            output_model = {}
+            log.warning(e)
+
+        return output_model
 
     def next(self):
 
@@ -63,7 +159,6 @@ class SuperCatForm(CatForm):
             # Execute agent if form tools are present
             if len(self._get_form_tools()) > 0:
                 agent_output = self.tool_agent.execute(self.cat)
-                log.critical(f"Agent output: {agent_output}")
                 if agent_output.output:
                     if agent_output.return_direct:
                         return {"output": agent_output.output}
@@ -81,8 +176,12 @@ class SuperCatForm(CatForm):
         return self.message()
 
     @property
-    def form_data(self):
+    def form_data(self) -> Dict:
         return self._model
+
+    @property
+    def form_data_validated(self) -> Optional[BaseModel]:
+        return self._get_validated_form_data()
 
 
 def super_cat_form(form: SuperCatForm) -> SuperCatForm:
