@@ -8,6 +8,7 @@ from langchain_core.prompts import PromptTemplate
 
 from cat.experimental.form import form, CatForm, CatFormState
 from cat.plugins.super_cat_form.super_cat_form_agent import SuperCatFormAgent
+from cat.plugins.super_cat_form.super_cat_form_events import FormEventManager, FormEvent, FormEventContext
 from cat.plugins.super_cat_form import prompts
 from cat.log import log
 
@@ -32,6 +33,21 @@ class SuperCatForm(CatForm):
     def __init__(self, cat):
         super().__init__(cat)
         self.tool_agent = SuperCatFormAgent(self._get_form_tools(), self)
+        self.events = FormEventManager()
+        self._setup_default_handlers()
+        self.events.emit(
+            FormEvent.FORM_INITIALIZED,
+            data={},
+            form_id=self.name
+        )
+
+    def _setup_default_handlers(self):
+        """Setup default event handlers for logging"""
+        for event in FormEvent:
+            self.events.on(event, self._log_event)
+
+    def _log_event(self, event: FormEventContext):
+        log.debug(f"Form {self.name}: {event.event.name} - {event.data}")
 
     def _get_validated_form_data(self) -> Optional[BaseModel]:
         """
@@ -53,6 +69,14 @@ class SuperCatForm(CatForm):
         Returns:
             Dict: NER result
         """
+        self.events.emit(
+            FormEvent.EXTRACTION_STARTED,
+            data={
+                "chat_history": self.cat.stringify_chat_history(),
+                "form_data": self.form_data
+            },
+            form_id=self.name
+        )
         prompt_params = {
             "chat_history": self.cat.stringify_chat_history(),
             "form_description": f"{self.name} - {self.description}"
@@ -66,7 +90,11 @@ class SuperCatForm(CatForm):
         )
         chain = prompt | self.cat._llm | parser
         ner_result = chain.invoke(prompt_params)
-        log.critical(f"NER Result: {ner_result}")
+        self.events.emit(
+            FormEvent.EXTRACTION_COMPLETED,
+            data=ner_result,
+            form_id=self.name
+        )
         return ner_result
 
     @classmethod
@@ -80,6 +108,25 @@ class SuperCatForm(CatForm):
                 if getattr(func, '_is_form_tool', False):
                     form_tools[name] = func
         return form_tools
+
+    def update(self):
+        old_model = self._model.copy()
+        super().update()
+
+        updated_fields = {
+            k: v for k, v in self._model.items()
+            if k not in old_model or old_model[k] != v
+        }
+
+        if updated_fields:
+            self.events.emit(
+                FormEvent.FIELD_UPDATED,
+                {
+                    "fields": updated_fields,
+                    "old_values": {k: old_model.get(k) for k in updated_fields}
+                },
+                self.name
+            )
 
 
     def sanitize(self, model: Dict) -> Dict:
@@ -110,6 +157,13 @@ class SuperCatForm(CatForm):
         Override the validate method to properly handle nested structures
         while preserving partial data.
         """
+
+        self.events.emit(
+            FormEvent.VALIDATION_STARTED,
+            {"model": self._model},
+            self.name
+        )
+
         self._missing_fields = []
         self._errors = []
 
@@ -126,6 +180,16 @@ class SuperCatForm(CatForm):
                     self._errors.append(f'{field_path}: {error["msg"]}')
 
             self._state = CatFormState.INCOMPLETE
+        finally:
+            self.events.emit(
+                FormEvent.VALIDATION_COMPLETED,
+                {
+                    "model": self._model,
+                    "missing_fields": self._missing_fields,
+                    "errors": self._errors
+                },
+                self.name
+            )
 
     def extract(self):
         """
@@ -144,15 +208,36 @@ class SuperCatForm(CatForm):
         if self._state == CatFormState.WAIT_CONFIRM:
             if self.confirm():
                 self._state = CatFormState.CLOSED
+                self.events.emit(
+                    FormEvent.FORM_SUBMITTED,
+                    {
+                        "form_data": self.form_data
+                    },
+                    self.name
+                )
                 return self.submit(self._model)
             else:
                 if self.check_exit_intent():
                     self._state = CatFormState.CLOSED
+                    self.events.emit(
+                        FormEvent.FORM_CLOSED,
+                        {
+                            "form_data": self.form_data
+                        },
+                        self.name
+                    )
                 else:
                     self._state = CatFormState.INCOMPLETE
 
         if self.check_exit_intent():
             self._state = CatFormState.CLOSED
+            self.events.emit(
+                FormEvent.FORM_CLOSED,
+                {
+                    "form_data": self.form_data
+                },
+                self.name
+            )
 
         if self._state == CatFormState.INCOMPLETE:
 
