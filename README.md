@@ -14,6 +14,8 @@ SuperCatForm is a powerful, strongly opinionated, and flexible Cheshire Cat plug
 
 - **Full Pydantic validation support**: Ensure that validation rules are applied both in the extraction phase (i.e. inserted in the extraction prompt) and during validation phase.
 
+- **Form Events**: Hook into various stages of the form lifecycle to execute custom logic. For example, you can trigger actions when form extraction is completed, or when the form is submitted.
+
 - **JSON schema support** (Coming soon...): Streamline form validation and consistency with schema-based definitions.
 
 
@@ -24,8 +26,9 @@ SuperCatForm is a powerful, strongly opinionated, and flexible Cheshire Cat plug
 3. Create a form class as you would do with traditional `CatForm`.
 4. Define your model class leveraging all the power of Pydantic.
 5. Replace the `@form` decorator with `@super_cat_form`.
-6. Add useful methods to the class and mark them with `@form_tool`.
-7. Have fun!
+6. Hook into form events using the `events` attribute.
+7. Add useful methods to the class and mark them with `@form_tool`.
+8. Have fun!
 
 
 ```python
@@ -34,6 +37,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 
 from cat.plugins.super_cat_form.super_cat_form import SuperCatForm, form_tool, super_cat_form
+from cat.plugins.super_cat_form.super_cat_form_events import FormEvent, FormEventContext
 
 
 class Address(BaseModel):
@@ -67,6 +71,19 @@ class PizzaForm(SuperCatForm):
         "not hungry anymore",
     ]
     ask_confirm = False
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.events.on(
+            FormEvent.EXTRACTION_COMPLETED,
+            self.hawaiian_is_not_a_real_pizza
+        )
+    
+    def hawaiian_is_not_a_real_pizza(self, context: FormEventContext):
+        ordered_pizzas = context.data.get("pizzas", [])
+        for pizza in ordered_pizzas:
+            if pizza["pizza_type"] == "Hawaiian":
+                self.cat.send_ws_message("Dude... really?", msg_type="chat")
 
     @form_tool(return_direct=True)
     def get_menu(self):
