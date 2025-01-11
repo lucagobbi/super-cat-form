@@ -1,6 +1,6 @@
 import inspect
 from functools import wraps
-from typing import Dict, Optional
+from typing import Dict, Optional, Type
 from pydantic import BaseModel, ValidationError
 
 from langchain_core.output_parsers import JsonOutputParser
@@ -35,6 +35,8 @@ class SuperCatForm(CatForm):
         self.tool_agent = SuperCatFormAgent(self._get_form_tools(), self)
         self.events = FormEventManager()
         self._setup_default_handlers()
+        # This hack to ensure backward compatibility with version pre-1.8.0
+        self._legacy_version = 'model' in inspect.signature(super().validate).parameters
         self.events.emit(
             FormEvent.FORM_INITIALIZED,
             data={},
@@ -110,9 +112,33 @@ class SuperCatForm(CatForm):
         return form_tools
 
     def update(self):
-        old_model = self._model.copy()
-        super().update()
+        """
+        Version-compatible update method that works with both old and new CatForm versions.
+        Ensures _model is always a dictionary.
+        """
 
+        old_model = self._model.copy() if self._model is not None else {}
+
+        # Extract and sanitize new data
+        json_details = self.extract()
+        json_details = self.sanitize(json_details)
+        merged_model = old_model | json_details
+
+        if self._legacy_version:
+            # old version: validate returns the updated model
+            validated_model = self.validate(merged_model)
+            # ensure we never set None as the model
+            self._model = validated_model if validated_model is not None else {}
+        else:
+            # new version: set model first, then validate
+            self._model = merged_model
+            self.validate()
+
+        # ensure self._model is never None
+        if self._model is None:
+            self._model = {}
+
+        # emit events for updated fields
         updated_fields = {
             k: v for k, v in self._model.items()
             if k not in old_model or old_model[k] != v
@@ -152,12 +178,11 @@ class SuperCatForm(CatForm):
 
         return _sanitize_nested(model)
 
-    def validate(self):
+    def validate(self, model=None):
         """
         Override the validate method to properly handle nested structures
         while preserving partial data.
         """
-
         self.events.emit(
             FormEvent.VALIDATION_STARTED,
             {"model": self._model},
@@ -168,8 +193,15 @@ class SuperCatForm(CatForm):
         self._errors = []
 
         try:
-            self.model_getter()(**self._model)
-            self._state = CatFormState.COMPLETE
+            if self._legacy_version and model is not None:
+                validated_model = self.model_getter()(**model).model_dump(mode="json")
+                self._state = CatFormState.COMPLETE
+                return validated_model
+            else:
+                # New version: validate self._model
+                self.model_getter()(**self._model)
+                self._state = CatFormState.COMPLETE
+
 
         except ValidationError as e:
             for error in e.errors():
@@ -180,6 +212,9 @@ class SuperCatForm(CatForm):
                     self._errors.append(f'{field_path}: {error["msg"]}')
 
             self._state = CatFormState.INCOMPLETE
+
+            if self._legacy_version and model is not None:
+                return model
         finally:
             self.events.emit(
                 FormEvent.VALIDATION_COMPLETED,
@@ -259,6 +294,14 @@ class SuperCatForm(CatForm):
                 return self.submit(self._model)
 
         return self.message()
+
+    def model_getter(self) -> Type[BaseModel]:
+        """
+        Override for backward compatibility with older CatForm versions where model_getter
+        might not be implemented. This method simply returns model_class, which maintains
+        identical functionality while ensuring the method exists in legacy scenarios (pre 1.8.0).
+        """
+        return self.model_class
 
     @property
     def form_data(self) -> Dict:
