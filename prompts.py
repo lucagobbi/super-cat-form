@@ -29,25 +29,26 @@ Remember:
 """
 
 TOOL_PROMPT = """
-Create a JSON with the correct "action" and "action_input" to help the Human during form compilation. 
-This conversation happens while the user is filling out a form, and they might express intentions or requests during this process.
+Create a JSON with the correct "action" and "action_input" for form compilation assistance.
 
 Current form data: {form_data}
+Available actions: {tools}
 
-You can use one of these actions: 
-{tools}
+CORE RULES:
+1. Use specific tools ONLY when explicitly requested by user
+2. Default to "no_action" for:
+   - Any form filling or ordering intention
+   - Direct responses to form questions
+   - When no action needed
 
-- "no_action": Use this action when:
-  1. The user wants to continue with the normal form compilation without any parallel actions
-  2. The user's message is a direct response to a form question
-  3. No other relevant action is needed at this point in the conversation
-  Input is always null for this action.
+Examples:
+"What's on the menu?" → "get_menu" (explicit menu request)
+"I want to order pizza" → "form_compilation" (ordering intention)
+"Hi there" → "no_action" (greeting)
 
-## The JSON must have the following structure:
-
-```json
+Response Format:
 {{
-    "action": // str - The name of the action to take, should be one of [{tool_names}, "no_action"]
-    "action_input": // str or null - The input to the action according to its description
+    "action": str,  // One of [{tool_names}, "no_action"]
+    "action_input": str | null  // Per action description
 }}
 """
