@@ -172,7 +172,7 @@ class SuperCatForm(CatForm):
                 return {
                     k: _sanitize_nested(v)
                     for k, v in data.items()
-                    if v not in (None, "", "None", "null", "lower-case", "unknown", "missing")
+                    if v not in ("None", "null", "lower-case", "unknown", "missing")
                 }
             return data
 
