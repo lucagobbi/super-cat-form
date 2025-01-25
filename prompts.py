@@ -1,4 +1,4 @@
-NER_PROMPT = """
+DEFAULT_NER_PROMPT = """
 You are an advanced AI assistant specializing in information extraction and structured data formatting. 
 Your task is to extract relevant information from a given text and format it according to a specified JSON structure. 
 This extraction is part of a conversational form-filling process.
@@ -28,10 +28,11 @@ Remember:
 
 """
 
-TOOL_PROMPT = """
+DEFAULT_TOOL_PROMPT = """
 Create a JSON with the correct "action" and "action_input" for form compilation assistance.
 
 Current form data: {form_data}
+
 Available actions: {tools}
 
 CORE RULES:
@@ -41,14 +42,18 @@ CORE RULES:
    - Direct responses to form questions
    - When no action needed
 
-Examples:
-"What's on the menu?" → "get_menu" (explicit menu request)
-"I want to order pizza" → "form_compilation" (ordering intention)
-"Hi there" → "no_action" (greeting)
+{examples}
 
 Response Format:
 {{
     "action": str,  // One of [{tool_names}, "no_action"]
     "action_input": str | null  // Per action description
 }}
+"""
+
+DEFAULT_TOOL_EXAMPLES = """
+Examples:
+"What's on the menu?" → "get_menu" (explicit menu request)
+"I want to order pizza" → "form_compilation" (ordering intention)
+"Hi there" → "no_action" (greeting)
 """

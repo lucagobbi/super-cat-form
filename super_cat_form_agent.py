@@ -1,4 +1,4 @@
-from typing import Dict, Callable
+from typing import Dict
 import traceback
 import inspect
 
@@ -6,18 +6,18 @@ from langchain.prompts import ChatPromptTemplate
 from langchain_core.prompts.chat import SystemMessagePromptTemplate
 from langchain_core.runnables import RunnableConfig, RunnableLambda
 
+from cat.plugins.super_cat_form.super_cat_form_events import FormEvent
 from cat.agents import BaseAgent, AgentOutput
 from cat.looking_glass.output_parser import ChooseProcedureOutputParser, LLMAction
 from cat.looking_glass.callbacks import ModelInteractionHandler
-from cat.plugins.super_cat_form import prompts
 from cat.log import log
 from cat import utils
 
 class SuperCatFormAgent(BaseAgent):
     """Agent that executes form-based tools based on conversation context."""
 
-    def __init__(self, form_tools: Dict[str, Callable], form_instance):
-        self.form_tools = form_tools
+    def __init__(self, form_instance):
+        self.form_tools = form_instance.get_form_tools()
         self.form_instance = form_instance
 
     def execute(self, stray) -> AgentOutput:
@@ -32,7 +32,7 @@ class SuperCatFormAgent(BaseAgent):
 
     def _process_tools(self, stray) -> AgentOutput:
 
-        llm_action = self._execute_tool_selection_chain(stray, prompts.TOOL_PROMPT)
+        llm_action = self._execute_tool_selection_chain(stray, self.form_instance.tool_prompt)
 
         log.debug(f"Selected tool: {llm_action}")
 
@@ -74,7 +74,7 @@ class SuperCatFormAgent(BaseAgent):
     def _execute_tool(self, llm_action: LLMAction) -> AgentOutput:
         """Execute the selected tool and return results."""
 
-        if not llm_action.action:
+        if not llm_action.action or llm_action.action == "no_action":
             return AgentOutput(output="")
 
         chosen_procedure = self.form_tools.get(llm_action.action)
@@ -84,11 +84,28 @@ class SuperCatFormAgent(BaseAgent):
             return AgentOutput(output="")
 
         try:
+            self.form_instance.events.emit(
+                event=FormEvent.TOOL_STARTED,
+                data={
+                    "tool": llm_action.action,
+                    "tool_input": llm_action.action_input
+                },
+                form_id=self.form_instance.name
+            )
             bound_method = chosen_procedure.__get__(self.form_instance, self.form_instance.__class__)
             sig = inspect.signature(chosen_procedure)
             params = list(sig.parameters.keys())
             tool_output = (
                 bound_method() if len(params) == 1 else bound_method(llm_action.action_input)
+            )
+            self.form_instance.events.emit(
+                event=FormEvent.TOOL_EXECUTED,
+                data={
+                    "tool": llm_action.action,
+                    "tool_input": llm_action.action_input,
+                    "tool_output": tool_output
+                },
+                form_id=self.form_instance.name
             )
             return AgentOutput(
                 output=str(tool_output),
@@ -98,12 +115,35 @@ class SuperCatFormAgent(BaseAgent):
                 ]
             )
         except Exception as e:
+            self.form_instance.events.emit(
+                event=FormEvent.TOOL_FAILED,
+                data={
+                    "tool": llm_action.action,
+                    "tool_input": llm_action.action_input,
+                    "error": str(e)
+                },
+                form_id=self.form_instance.name
+            )
             log.error(
                 f"Error executing form tool `{chosen_procedure.__name__}`: {str(e)}"
             )
             traceback.print_exc()
 
         return AgentOutput(output="")
+
+    def _generate_examples(self) -> str:
+        default_examples = self.form_instance.default_examples
+
+        if default_examples:
+            return default_examples
+
+        default_examples = "Examples:\n" + "\n".join(
+            f"{k}: {v._examples}"
+            for k, v in self.form_tools.items()
+        )
+
+        return default_examples
+
 
     def _prepare_prompt_variables(self) -> Dict[str, str]:
         """Prepare variables for the prompt template."""
@@ -114,5 +154,5 @@ class SuperCatFormAgent(BaseAgent):
                 for tool in self.form_tools.values()
             ),
             "tool_names": '"' + '", "'.join(self.form_tools.keys()) + '"',
-            # "examples": self._generate_examples() # TODO add examples
+            "examples": self._generate_examples()
         }

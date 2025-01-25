@@ -113,3 +113,199 @@ class PizzaForm(SuperCatForm):
 
 
 ```
+
+## Advanced Configuration 🔧
+
+### Custom Prompts
+
+You can customize the prompts used for extraction and tool selection by overriding the default values in your
+`SuperCatForm` class. Like this:
+
+```python
+
+@super_cat_form
+class MedicalDiagnosticForm(SuperCatForm):
+    # Custom NER prompt with domain-specific instructions
+    ner_prompt = """You are a medical assistant extracting patient data.
+    
+    Current form state: {form_data}
+    
+    Extract following entities:
+    - Symptoms
+    - Medical history
+    - Allergies
+    
+    {format_instructions}
+    """
+    
+    # Custom tool selection prompt
+    tool_prompt = """You are a medical diagnostic assistant. Available tools:
+    
+    {tools}
+    
+    Use tools when you need additional information.
+    
+    {examples}
+    """
+
+```
+
+<details>
+    <summary>
+        Default NER Prompt
+    </summary>
+
+
+```
+You are an advanced AI assistant specializing in information extraction and structured data formatting. 
+Your task is to extract relevant information from a given text and format it according to a specified JSON structure. 
+This extraction is part of a conversational form-filling process.
+
+Here are the key components for this task:
+
+1. Chat History:
+<chat_history>
+{chat_history}
+</chat_history>
+
+2.Form Description:
+<form_description>
+{form_description}
+</form_description>
+
+3. Format Instructions (JSON schema):
+<format_instructions>
+{format_instructions}
+</format_instructions>
+
+Remember:
+- The extraction is part of an ongoing conversation, so consider any contextual information that might be relevant.
+- Only include information that is explicitly stated or can be directly inferred from the input text.
+- If a required field in the JSON schema cannot be filled based on the available information, use null or an appropriate default value as specified in the format instructions.
+- Ensure that the output JSON is valid and matches the structure defined in the format instructions.
+```
+</details>
+
+
+<details>
+    <summary>
+        Default Tool Prompt
+    </summary>
+
+
+```
+Create a JSON with the correct "action" and "action_input" for form compilation assistance.
+
+Current form data: {form_data}
+
+Available actions: {tools}
+
+CORE RULES:
+1. Use specific tools ONLY when explicitly requested by user
+2. Default to "no_action" for:
+   - Any form filling or ordering intention
+   - Direct responses to form questions
+   - When no action needed
+
+{examples}
+
+Response Format:
+{{
+    "action": str,  // One of [{tool_names}, "no_action"]
+    "action_input": str | null  // Per action description
+}}
+```
+</details>
+
+### Tool Examples
+
+It is often recommended to provide examples for the usage of tools in the tool prompt.
+
+You can either override the `default_examples` attribute on your `SuperCatForm` class:
+
+```python
+
+@super_cat_form
+class HotelBookingForm(SuperCatForm):
+    default_examples = """
+    Examples:
+    "Are pets allowed?" → "are_pets_allowed" (explicit pets request)
+    """
+
+    @form_tool
+    def are_pets_allowed(self):
+        """Useful to check if pets are allowed. User may ask: are pets allowed? Input is always None."""
+        return True
+```
+
+Or you can use the `examples` parameter on the `@form_tool` decorator, be sure to deactivate the default examples by setting `default_examples = None` on your `SuperCatForm` class:
+
+```python
+
+@super_cat_form
+class HotelBookingForm(SuperCatForm):
+    default_examples = None
+
+    @form_tool(examples=["Are pets allowed?"])
+    def are_pets_allowed(self):
+        """Useful to check if pets are allowed. User may ask: are pets allowed? Input is always None."""
+        return True
+```
+
+<details>
+    <summary>
+        Default Examples Prompt
+    </summary>
+
+
+```
+Examples:
+"What's on the menu?" → "get_menu" (explicit menu request)
+"I want to order pizza" → "form_compilation" (ordering intention)
+"Hi there" → "no_action" (greeting)
+```
+</details>
+
+
+
+## Form Events
+
+You can hook into various stages of the form lifecycle to execute custom logic. For example, you can trigger actions when form extraction is completed, or when the form is submitted.
+
+Events supported:
+
+```python
+class FormEvent(Enum):
+
+    # Lifecycle events
+    FORM_INITIALIZED = "form_initialized"
+    FORM_SUBMITTED = "form_submitted"
+    FORM_CLOSED = "form_closed"
+
+    # Extraction events
+    EXTRACTION_STARTED = "extraction_started"
+    EXTRACTION_COMPLETED = "extraction_completed"
+
+    # Validation events
+    VALIDATION_STARTED = "validation_started"
+    VALIDATION_COMPLETED = "validation_completed"
+
+    FIELD_UPDATED = "field_updated"
+
+    # Tool events
+    TOOL_STARTED = "tool_started"
+    TOOL_EXECUTED = "tool_executed"
+    TOOL_FAILED = "tool_failed"
+```
+
+A form event handler is a regular python function that takes a `FormEventContext` as input:
+
+```python
+
+class FormEventContext(BaseModel):
+    timestamp: datetime       # Event occurrence time
+    form_id: str              # Form identifier
+    event: FormEvent          # Event type
+    data: Dict[str, Any]      # Event-specific payload
+
+```

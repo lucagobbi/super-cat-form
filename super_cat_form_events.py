@@ -27,6 +27,7 @@ class FormEvent(Enum):
     # Tool events
     TOOL_STARTED = "tool_started"
     TOOL_EXECUTED = "tool_executed"
+    TOOL_FAILED = "tool_failed"
 
 
 class FormEventContext(BaseModel):

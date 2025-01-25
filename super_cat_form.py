@@ -1,6 +1,6 @@
 import inspect
 from functools import wraps
-from typing import Dict, Optional, Type
+from typing import Dict, Optional, Type, List
 from pydantic import BaseModel, ValidationError
 
 from langchain_core.output_parsers import JsonOutputParser
@@ -12,9 +12,13 @@ from cat.plugins.super_cat_form.super_cat_form_events import FormEventManager, F
 from cat.plugins.super_cat_form import prompts
 from cat.log import log
 
-def form_tool(func=None, *, return_direct=False):
+def form_tool(func=None, *, return_direct=False, examples=None):
+
+    if examples is None:
+        examples = []
+
     if func is None:
-        return lambda f: form_tool(f, return_direct=return_direct)
+        return lambda f: form_tool(f, return_direct=return_direct, examples=examples)
 
     @wraps(func)
     def wrapper(self, *args, **kwargs):
@@ -22,6 +26,7 @@ def form_tool(func=None, *, return_direct=False):
 
     wrapper._is_form_tool = True
     wrapper._return_direct = return_direct
+    wrapper._examples = examples
     return wrapper
 
 
@@ -29,10 +34,13 @@ class SuperCatForm(CatForm):
     """
     SuperCatForm is the CatForm class that extends the functionality of the original CatForm class.
     """
+    ner_prompt = prompts.DEFAULT_NER_PROMPT
+    tool_prompt = prompts.DEFAULT_TOOL_PROMPT
+    default_examples = prompts.DEFAULT_TOOL_EXAMPLES
 
     def __init__(self, cat):
         super().__init__(cat)
-        self.tool_agent = SuperCatFormAgent(self._get_form_tools(), self)
+        self.tool_agent = SuperCatFormAgent(self)
         self.events = FormEventManager()
         self._setup_default_handlers()
         # This hack to ensure backward compatibility with version pre-1.8.0
@@ -85,7 +93,7 @@ class SuperCatForm(CatForm):
         }
         parser = JsonOutputParser(pydantic_object=self.model_class)
         prompt = PromptTemplate(
-            template=prompts.NER_PROMPT,
+            template=self.ner_prompt,
             input_variables=list(prompt_params.keys()),
             partial_variables={"format_instructions":
                                    parser.get_format_instructions()},
@@ -100,7 +108,7 @@ class SuperCatForm(CatForm):
         return ner_result
 
     @classmethod
-    def _get_form_tools(cls):
+    def get_form_tools(cls):
         """
         Get all methods of the class that are decorated with @form_tool.
         """
@@ -277,7 +285,7 @@ class SuperCatForm(CatForm):
         if self._state == CatFormState.INCOMPLETE:
 
             # Execute agent if form tools are present
-            if len(self._get_form_tools()) > 0:
+            if len(self.get_form_tools()) > 0:
                 agent_output = self.tool_agent.execute(self.cat)
                 if agent_output.output:
                     if agent_output.return_direct:
