@@ -5,12 +5,21 @@ from pydantic import BaseModel, ValidationError
 
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import PromptTemplate
+from langchain_core.messages import HumanMessage
+from langchain_core.runnables import RunnableConfig, RunnableLambda
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers.string import StrOutputParser
 
+from cat.looking_glass.callbacks import NewTokenHandler
 from cat.experimental.form import form, CatForm, CatFormState
 from cat.plugins.super_cat_form.super_cat_form_agent import SuperCatFormAgent
 from cat.plugins.super_cat_form.super_cat_form_events import FormEventManager, FormEvent, FormEventContext
 from cat.plugins.super_cat_form import prompts
 from cat.log import log
+from cat import utils
+
+from cat.looking_glass.callbacks import ModelInteractionHandler
+
 
 def form_tool(func=None, *, return_direct=False, examples=None):
 
@@ -50,6 +59,39 @@ class SuperCatForm(CatForm):
             data={},
             form_id=self.name
         )
+        self.cat.llm = self.super_llm
+
+    def super_llm(self, prompt: str | ChatPromptTemplate, params: dict = None, stream: bool = False) -> str:
+
+        callbacks = []
+        if stream:
+            callbacks.append(NewTokenHandler(self.cat))
+
+        caller = utils.get_caller_info()
+        callbacks.append(ModelInteractionHandler(self.cat, caller or "StrayCat"))
+
+        if isinstance(prompt, str):
+            prompt = ChatPromptTemplate(
+                messages=[
+                    # Use HumanMessage instead of SystemMessage for wide-range compatibility
+                    HumanMessage(content=prompt)
+                ]
+            )
+
+        chain = (
+                prompt
+                | RunnableLambda(lambda x: utils.langchain_log_prompt(x, f"{caller} prompt"))
+                | self.cat._llm
+                | RunnableLambda(lambda x: utils.langchain_log_output(x, f"{caller} prompt output"))
+                | StrOutputParser()
+        )
+
+        output = chain.invoke(
+            params or {},
+            config=RunnableConfig(callbacks=callbacks)
+        )
+
+        return output
 
     def _setup_default_handlers(self):
         """Setup default event handlers for logging"""
