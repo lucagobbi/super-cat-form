@@ -217,6 +217,9 @@ class SuperCatForm(CatForm):
             Dict: Sanitized form data
         """
 
+        if "$defs" in model:
+            del model["$defs"]
+
         def _sanitize_nested(data):
             if isinstance(data, dict):
                 return {

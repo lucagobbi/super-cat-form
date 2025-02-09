@@ -37,16 +37,17 @@ Available actions: {tools}
 
 CORE RULES:
 1. Use specific tools ONLY when explicitly requested by user
-2. Default to "no_action" for:
+2. Use "form_completion" for:
    - Any form filling or ordering intention
    - Direct responses to form questions
+3. Default to "no_action" for:
    - When no action needed
 
 {examples}
 
 Response Format:
 {{
-    "action": str,  // One of [{tool_names}, "no_action"]
+    "action": str,  // One of [{tool_names}, "no_action", "form_completion"]
     "action_input": str | null  // Per action description
 }}
 """
@@ -54,6 +55,6 @@ Response Format:
 DEFAULT_TOOL_EXAMPLES = """
 Examples:
 "What's on the menu?" → "get_menu" (explicit menu request)
-"I want to order pizza" → "form_compilation" (ordering intention)
+"I want to order pizza" → "form_completion" (ordering intention)
 "Hi there" → "no_action" (greeting)
 """

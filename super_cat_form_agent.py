@@ -74,7 +74,7 @@ class SuperCatFormAgent(BaseAgent):
     def _execute_tool(self, llm_action: LLMAction) -> AgentOutput:
         """Execute the selected tool and return results."""
 
-        if not llm_action.action or llm_action.action == "no_action":
+        if not llm_action.action or llm_action.action in ["no_action", "form_completion"]:
             return AgentOutput(output="")
 
         chosen_procedure = self.form_tools.get(llm_action.action)
