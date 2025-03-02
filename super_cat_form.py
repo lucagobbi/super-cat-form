@@ -114,41 +114,6 @@ class SuperCatForm(CatForm):
         except ValidationError:
             return None
 
-    def _ner(self) -> Dict:
-        """
-        Executes NER using LangChain JsonOutputParser on current form
-
-        Returns:
-            Dict: NER result
-        """
-        self.events.emit(
-            FormEvent.EXTRACTION_STARTED,
-            data={
-                "chat_history": self.cat.stringify_chat_history(),
-                "form_data": self.form_data
-            },
-            form_id=self.name
-        )
-        prompt_params = {
-            "chat_history": self.cat.stringify_chat_history(),
-            "form_description": f"{self.name} - {self.description}"
-        }
-        parser = JsonOutputParser(pydantic_object=self.model_class)
-        prompt = PromptTemplate(
-            template=self.ner_prompt,
-            input_variables=list(prompt_params.keys()),
-            partial_variables={"format_instructions":
-                                   parser.get_format_instructions()},
-        )
-        chain = prompt | self.cat._llm | parser
-        ner_result = chain.invoke(prompt_params)
-        self.events.emit(
-            FormEvent.EXTRACTION_COMPLETED,
-            data=ner_result,
-            form_id=self.name
-        )
-        return ner_result
-
     @classmethod
     def get_form_tools(cls):
         """
@@ -284,10 +249,35 @@ class SuperCatForm(CatForm):
         Override the extract method to include NER with LangChain JsonOutputParser
         """
         try:
-            output_model = self._ner()
+            self.events.emit(
+                FormEvent.EXTRACTION_STARTED,
+                data={
+                    "chat_history": self.cat.stringify_chat_history(),
+                    "form_data": self.form_data
+                },
+                form_id=self.name
+            )
+            prompt_params = {
+                "chat_history": self.cat.stringify_chat_history(),
+                "form_description": f"{self.name} - {self.description}"
+            }
+            parser = JsonOutputParser(pydantic_object=self.model_getter())
+            prompt = PromptTemplate(
+                template=self.ner_prompt,
+                input_variables=list(prompt_params.keys()),
+                partial_variables={"format_instructions":
+                                       parser.get_format_instructions()},
+            )
+            chain = prompt | self.cat._llm | parser
+            output_model = chain.invoke(prompt_params)
+            self.events.emit(
+                FormEvent.EXTRACTION_COMPLETED,
+                data=output_model,
+                form_id=self.name
+            )
         except Exception as e:
             output_model = {}
-            log.warning(e)
+            log.error(e)
 
         return output_model
 
