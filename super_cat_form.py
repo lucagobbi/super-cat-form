@@ -47,7 +47,7 @@ class SuperCatForm(CatForm):
     tool_prompt = prompts.DEFAULT_TOOL_PROMPT
     default_examples = prompts.DEFAULT_TOOL_EXAMPLES
 
-    def __init__(self, cat):
+    def __init__(self, cat, previous_form=None):
         super().__init__(cat)
         self.tool_agent = SuperCatFormAgent(self)
         self.events = FormEventManager()
@@ -60,6 +60,19 @@ class SuperCatForm(CatForm):
             form_id=self.name
         )
         self.cat.llm = self.super_llm
+        self.previous_form = previous_form
+
+        # Setup event handler for inside form creation
+        self.events.on(
+            FormEvent.INSIDE_FORM_ACTIVE,
+            self._on_create_inide_form
+        )
+
+        # Setup event handler for form closure
+        self.events.on(
+            FormEvent.INSIDE_FORM_CLOSED,
+            self._on_form_closed
+        )
 
     def super_llm(self, prompt: str | ChatPromptTemplate, params: dict = None, stream: bool = False) -> str:
 
