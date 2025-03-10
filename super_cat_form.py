@@ -294,6 +294,70 @@ class SuperCatForm(CatForm):
 
         return output_model
 
+    def submit_close(self, form_data):
+        """
+        Submit the actual form and reset the previous, if exists
+        """
+
+        if self.previous_form is not None:
+            self.cat.working_memory.active_form = self.previous_form
+
+            self.previous_form.events.emit(
+                FormEvent.INSIDE_FORM_CLOSED,
+                {
+                    "form_data": form_data,
+                    "output": self.submit(form_data)
+                },
+                self.name
+            )
+
+        # Return message of the external (old) form
+        return self.previous_form.message()
+
+    def start_inside_form(self, form_class):
+        """
+        Create and start a new form instance inside the current form.
+        """
+
+        new_form_instance = form_class(
+            cat=self.cat,
+            previous_form=self
+        )
+
+        # Set as active form
+        self.cat.working_memory.active_form = new_form_instance
+
+        self.events.emit(
+            FormEvent.INSIDE_FORM_ACTIVE,
+            {
+                "instance": new_form_instance
+            },
+            self.name
+        )
+
+        # Return the first message of the new form
+        return new_form_instance.next()["output"]
+
+    def _on_create_inide_form(self, context: FormEventContext):
+        """
+        Called when a new inside form is created.
+        """
+
+        form_class = context.data.get("instance")
+
+        log.debug(f"Creating inside form: {form_class}")
+
+    def _on_form_closed(self, context: FormEventContext):
+        """
+        Called when the form is closed.
+        """
+
+        submit_output = context.data.get("output")
+        form_data = context.data.get("form_data")
+
+        # Send the submit output to chat
+        self.cat.send_chat_message(submit_output["output"])
+
     def next(self):
 
         if self._state == CatFormState.WAIT_CONFIRM:
