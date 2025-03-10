@@ -311,8 +311,11 @@ class SuperCatForm(CatForm):
                 self.name
             )
 
-        # Return message of the external (old) form
-        return self.previous_form.message()
+            # Return message of the external (old) form
+            return self.previous_form.message()
+
+        # By default, return the submit output
+        return self.submit(form_data)
 
     def start_inside_form(self, form_class):
         """
