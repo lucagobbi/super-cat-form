@@ -370,7 +370,7 @@ class SuperCatForm(CatForm):
                     },
                     self.name
                 )
-                return self.submit(self._model)
+                return self.submit_close(self._model)
             else:
                 if self.check_exit_intent():
                     self._state = CatFormState.CLOSED
@@ -411,7 +411,7 @@ class SuperCatForm(CatForm):
                 self._state = CatFormState.WAIT_CONFIRM
             else:
                 self._state = CatFormState.CLOSED
-                return self.submit(self._model)
+                return self.submit_close(self._model)
 
         return self.message()
 
