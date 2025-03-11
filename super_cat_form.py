@@ -479,7 +479,7 @@ class SuperCatForm(CatForm):
                 else:
                     self._state = CatFormState.INCOMPLETE
 
-        if self.check_exit_intent():
+        if self.check_exit_intent() and not self._state == CatFormState.CLOSED:
             self._state = CatFormState.CLOSED
             self.events.emit(
                 FormEvent.FORM_CLOSED,
