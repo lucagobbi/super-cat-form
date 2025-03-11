@@ -453,6 +453,23 @@ class SuperCatForm(CatForm):
         # Send the submit output to chat
         self.cat.send_chat_message(submit_output["output"])
 
+    def _on_form_closed(self, form_data):
+        """
+        Called when the form is closed.
+        """
+        log.debug(f"[EVENT: _on_form_closed] form {self.name} closed")
+
+        if self.previous_form is not None:
+
+            self.previous_form.events.emit(
+                FormEvent.INSIDE_FORM_CLOSED,
+                {
+                    "form_data": form_data,
+                    "output": self.message_closed(force=True)
+                },
+                self.name
+            )
+
     def next(self):
 
         if self._state == CatFormState.WAIT_CONFIRM:
