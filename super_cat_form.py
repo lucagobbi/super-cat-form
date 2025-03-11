@@ -69,6 +69,12 @@ class SuperCatForm(CatForm):
         self.cat.llm = self.super_llm
         self.previous_form = previous_form
 
+    def __reset_active_form(self, *args, **kwargs):
+        """
+        Reset the active form to the previous form, if exists.
+        """
+        if self.previous_form is not None:
+            self.cat.working_memory.active_form = self.previous_form
 
     def super_llm(self, prompt: str | ChatPromptTemplate, params: dict = None, stream: bool = False) -> str:
 
