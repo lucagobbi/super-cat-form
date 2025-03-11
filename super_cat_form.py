@@ -476,6 +476,15 @@ class SuperCatForm(CatForm):
                 self.name
             )
 
+    def message_closed(self, force=False):
+        """
+        Return the message of previous form if exists, otherwise the default message.
+        """
+        if self.previous_form is not None and not force:
+            return self.previous_form.message()
+
+        return super().message_closed()
+
     def next(self):
 
         if self._state == CatFormState.WAIT_CONFIRM:
