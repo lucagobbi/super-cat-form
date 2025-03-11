@@ -65,7 +65,7 @@ class SuperCatForm(CatForm):
         # Setup event handler for inside form creation
         self.events.on(
             FormEvent.INSIDE_FORM_ACTIVE,
-            self._on_create_inide_form
+            self._on_create_inside_form
         )
 
         # Setup event handler for form closure
@@ -341,7 +341,7 @@ class SuperCatForm(CatForm):
         # Return the first message of the new form
         return new_form_instance.next()["output"]
 
-    def _on_create_inide_form(self, context: FormEventContext):
+    def _on_create_inside_form(self, context: FormEventContext):
         """
         Called when a new inside form is created.
         """
