@@ -71,7 +71,7 @@ class SuperCatForm(CatForm):
         # Setup event handler for form closure
         self.events.on(
             FormEvent.INSIDE_FORM_CLOSED,
-            self._on_form_closed
+            self._on_inside_form_closed
         )
 
     def super_llm(self, prompt: str | ChatPromptTemplate, params: dict = None, stream: bool = False) -> str:
@@ -350,7 +350,7 @@ class SuperCatForm(CatForm):
 
         log.debug(f"Creating inside form: {form_class}")
 
-    def _on_form_closed(self, context: FormEventContext):
+    def _on_inside_form_closed(self, context: FormEventContext):
         """
         Called when the form is closed.
         """
