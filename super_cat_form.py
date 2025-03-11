@@ -111,6 +111,34 @@ class SuperCatForm(CatForm):
         for event in FormEvent:
             self.events.on(event, self._log_event)
 
+        # Setup event handler for inside form creation
+        self.events.on(
+            FormEvent.INSIDE_FORM_ACTIVE,
+            self._on_inside_create_form
+        )
+
+        # Setup event handler for form inside closure
+        self.events.on(
+            FormEvent.INSIDE_FORM_CLOSED,
+            self._on_inside_form_closed
+        )
+
+        # Setup event handler for form closure
+        self.events.on(
+            FormEvent.FORM_CLOSED,
+            self._on_form_closed
+        )
+
+        # Reset the active form when the form is submitted or closed
+        self.events.on(
+            FormEvent.FORM_SUBMITTED,
+            self.__reset_active_form
+        )
+        self.events.on(
+            FormEvent.FORM_CLOSED,
+            self.__reset_active_form
+        )
+
     def _log_event(self, event: FormEventContext):
         log.debug(f"Form {self.name}: {event.event.name} - {event.data}")
 
@@ -181,7 +209,6 @@ class SuperCatForm(CatForm):
                 },
                 self.name
             )
-
 
     def sanitize(self, model: Dict) -> Dict:
         """
@@ -341,13 +368,14 @@ class SuperCatForm(CatForm):
         # Return the first message of the new form
         return new_form_instance.next()["output"]
 
-    def _on_create_inside_form(self, context: FormEventContext):
+    # Event handlers
+    def _on_inside_create_form(self, context: FormEventContext):
         """
         Called when a new inside form is created.
         """
+        log.debug(f"[EVENT: _on_inside_create_form] inside form in {self.name} created")
 
         form_class = context.data.get("instance")
-
         log.debug(f"Creating inside form: {form_class}")
 
     def _on_inside_form_closed(self, context: FormEventContext):
