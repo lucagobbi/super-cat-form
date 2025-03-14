@@ -1,6 +1,5 @@
 import inspect
 from functools import wraps
-import re
 from typing import Dict, Optional, Type, List
 from pydantic import BaseModel, ValidationError
 
@@ -48,14 +47,11 @@ class SuperCatForm(CatForm):
     tool_prompt = prompts.DEFAULT_TOOL_PROMPT
     default_examples = prompts.DEFAULT_TOOL_EXAMPLES
 
-    inside_forms = []
+    # Track the form that started this form (if any)
+    parent_form = None
 
-    def __init__(self, cat, previous_form=None):
+    def __init__(self, cat):
         super().__init__(cat)
-
-        # This iniziale the forms in self.inside_forms,
-        self.initialize_inside_forms()
-
         self.tool_agent = SuperCatFormAgent(self)
         self.events = FormEventManager()
         self._setup_default_handlers()
@@ -67,14 +63,6 @@ class SuperCatForm(CatForm):
             form_id=self.name
         )
         self.cat.llm = self.super_llm
-        self.previous_form = previous_form
-
-    def __reset_active_form(self, *args, **kwargs):
-        """
-        Reset the active form to the previous form, if exists.
-        """
-        if self.previous_form is not None:
-            self.cat.working_memory.active_form = self.previous_form
 
     def super_llm(self, prompt: str | ChatPromptTemplate, params: dict = None, stream: bool = False) -> str:
 
@@ -108,38 +96,20 @@ class SuperCatForm(CatForm):
 
         return output
 
+    def _on_form_closed(self, context: FormEventContext):
+        """Restore parent form when this form is closed or submitted"""
+        if self.parent_form is not None:
+            self.cat.working_memory.active_form = self.parent_form
+            log.debug(f"Restored previous form: {self.parent_form.name}")
+
     def _setup_default_handlers(self):
         """Setup default event handlers for logging"""
         for event in FormEvent:
             self.events.on(event, self._log_event)
-
-        # Setup event handler for inside form creation
-        self.events.on(
-            FormEvent.INSIDE_FORM_ACTIVE,
-            self._on_inside_create_form
-        )
-
-        # Setup event handler for form inside closure
-        self.events.on(
-            FormEvent.INSIDE_FORM_CLOSED,
-            self._on_inside_form_closed
-        )
-
-        # Setup event handler for form closure
-        self.events.on(
-            FormEvent.FORM_CLOSED,
-            self._on_form_closed
-        )
-
-        # Reset the active form when the form is submitted or closed
-        self.events.on(
-            FormEvent.FORM_SUBMITTED,
-            self.__reset_active_form
-        )
-        self.events.on(
-            FormEvent.FORM_CLOSED,
-            self.__reset_active_form
-        )
+        
+        # Add handler for form exit to restore previous form
+        self.events.on(FormEvent.FORM_CLOSED, self._on_form_closed)
+        self.events.on(FormEvent.FORM_SUBMITTED, self._on_form_closed)
 
     def _log_event(self, event: FormEventContext):
         log.debug(f"Form {self.name}: {event.event.name} - {event.data}")
@@ -168,74 +138,6 @@ class SuperCatForm(CatForm):
                 if getattr(func, '_is_form_tool', False):
                     form_tools[name] = func
         return form_tools
-
-    @staticmethod
-    def format_class_name(name):
-        """
-        Formats a class name into snake_case by inserting underscores before capital letters
-        and converting the result to lowercase.
-
-        Args:
-            name (str): The class name to format.
-
-        Returns:
-            str: The formatted name in snake_case.
-        """
-        def replacement(match):
-            """
-            Helper function to determine the replacement for regex matches.
-
-            Args:
-                match (re.Match): The regex match object.
-
-            Returns:
-                str: The replacement string.
-            """
-            # If the match is from the second pattern (?<!^)(?=[A-Z]), insert an underscore
-            if match.group(0) == '':
-                return '_'
-            # If the match is from the first pattern ([A-Z]+)([A-Z][a-z]), insert an underscore between groups
-            return match.group(1) + '_' + match.group(2)
-
-        # Regex pattern to handle
-        pattern = r'([A-Z]+)([A-Z][a-z])|(?<!^)(?=[A-Z])'
-
-        # Apply the regex substitution, convert to lowercase, and replace spaces with underscores
-        return re.sub(pattern, replacement, name).lower().replace(" ", "_")
-
-    @classmethod
-    def initialize_inside_forms(cls):
-        """
-        Initializes inside forms for the current form. For each form class in `cls.inside_forms`,
-        if it is a subclass of `CatForm`, create a dynamic method decorated with `form_tool`
-        that starts the inside form when called.
-        """
-        for form_class in cls.inside_forms:
-            if issubclass(form_class, CatForm):
-                
-                # Format the form class name into snake_case
-                formatted_form_name = cls.format_class_name(form_class.name or form_class.__name__)
-                tool_name = f"start_form_{formatted_form_name}"
-
-                # Define a dynamic method to start the inside form
-                def tool_start_inside_form(self, *args):
-                    return self.start_inside_form(form_class)
-
-                # Set the docstring of the dynamic method to include the example
-                # All examples are joined with " or " in the tool docstring
-                tool_start_inside_form.__doc__ = " or ".join(form_class.start_examples) + ". Input is always None."
-
-                # Set the name of the dynamic form method
-                tool_start_inside_form.__name__ = tool_name
-
-                # Wrap the dynamic method as a form tool
-                wrapped_form_tool = form_tool(
-                    func=tool_start_inside_form,
-                    return_direct=True
-                )
-
-                # Set the methods to the class
-                setattr(cls, tool_name, wrapped_form_tool)
 
     def update(self):
         """
@@ -393,13 +295,19 @@ class SuperCatForm(CatForm):
 
     def submit_close(self, form_data):
         """
-        Submit the actual form and reset the previous, if exists
+        Submit the form.
+        If the form has a parent form, emit an event and return the parent form message.
+        Otherwise, return the submit output.
+
+        Args:
+            form_data: The form data to submit
+
+        Returns:
+            AgentOutput: The message to display after the form is submitted
         """
 
-        if self.previous_form is not None:
-            self.__reset_active_form()
-
-            self.previous_form.events.emit(
+        if self.parent_form is not None:
+            self.parent_form.events.emit(
                 FormEvent.INSIDE_FORM_CLOSED,
                 {
                     "form_data": form_data,
@@ -409,81 +317,43 @@ class SuperCatForm(CatForm):
             )
 
             # Return message of the external (old) form
-            return self.previous_form.message()
+            return self.parent_form.message()
 
         # By default, return the submit output
         return self.submit(form_data)
 
-    def start_inside_form(self, form_class):
+    def start_sub_form(self, form_class):
         """
-        Create and start a new form instance inside the current form.
+        Create and activate a new form, saving this form as the parent form
+        
+        Args:
+            form_class: The form class to instantiate
+            
+        Returns:
+            str: The initial message from the new form
         """
+        # Create the new form instance
+        new_form = form_class(self.cat)
+        
+        # Set the parent form reference
+        new_form.parent_form= self
+        
+        # Activate the new form
+        self.cat.working_memory.active_form = new_form
 
-        new_form_instance = form_class(
-            cat=self.cat,
-            previous_form=self
-        )
-
-        # Set as active form
-        self.cat.working_memory.active_form = new_form_instance
-
+        # Emit event for the new form activation 
         self.events.emit(
             FormEvent.INSIDE_FORM_ACTIVE,
             {
-                "instance": new_form_instance
+                "instance": new_form
             },
             self.name
         )
-
+        
+        log.debug(f"Started sub-form: {new_form.name} from parent: {self.name}")
+        
         # Return the first message of the new form
-        return new_form_instance.next()["output"]
-
-    # Event handlers
-    def _on_inside_create_form(self, context: FormEventContext):
-        """
-        Called when a new inside form is created.
-        """
-        log.debug(f"[EVENT: _on_inside_create_form] inside form in {self.name} created")
-
-        form_class = context.data.get("instance")
-        log.debug(f"Creating inside form: {form_class}")
-
-    def _on_inside_form_closed(self, context: FormEventContext):
-        """
-        Called when the form is closed.
-        """
-
-        submit_output = context.data.get("output")
-        form_data = context.data.get("form_data")
-
-        # Send the submit output to chat
-        self.cat.send_chat_message(submit_output["output"])
-
-    def _on_form_closed(self, form_data):
-        """
-        Called when the form is closed.
-        """
-        log.debug(f"[EVENT: _on_form_closed] form {self.name} closed")
-
-        if self.previous_form is not None:
-
-            self.previous_form.events.emit(
-                FormEvent.INSIDE_FORM_CLOSED,
-                {
-                    "form_data": form_data,
-                    "output": self.message_closed(force=True)
-                },
-                self.name
-            )
-
-    def message_closed(self, force=False):
-        """
-        Return the message of previous form if exists, otherwise the default message.
-        """
-        if self.previous_form is not None and not force:
-            return self.previous_form.message()
-
-        return super().message_closed()
+        return new_form.next()["output"]
 
     def next(self):
 
