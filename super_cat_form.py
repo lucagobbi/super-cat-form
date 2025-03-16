@@ -47,6 +47,9 @@ class SuperCatForm(CatForm):
     tool_prompt = prompts.DEFAULT_TOOL_PROMPT
     default_examples = prompts.DEFAULT_TOOL_EXAMPLES
 
+    # Track the form that started this form (if any)
+    parent_form = None
+
     def __init__(self, cat):
         super().__init__(cat)
         self.tool_agent = SuperCatFormAgent(self)
@@ -93,10 +96,20 @@ class SuperCatForm(CatForm):
 
         return output
 
+    def _on_form_closed(self, context: FormEventContext):
+        """Restore parent form when this form is closed or submitted"""
+        if self.parent_form is not None:
+            self.cat.working_memory.active_form = self.parent_form
+            log.debug(f"Restored previous form: {self.parent_form.name}")
+
     def _setup_default_handlers(self):
         """Setup default event handlers for logging"""
         for event in FormEvent:
             self.events.on(event, self._log_event)
+        
+        # Add handler for form exit to restore previous form
+        self.events.on(FormEvent.FORM_CLOSED, self._on_form_closed)
+        self.events.on(FormEvent.FORM_SUBMITTED, self._on_form_closed)
 
     def _log_event(self, event: FormEventContext):
         log.debug(f"Form {self.name}: {event.event.name} - {event.data}")
@@ -168,7 +181,6 @@ class SuperCatForm(CatForm):
                 },
                 self.name
             )
-
 
     def sanitize(self, model: Dict) -> Dict:
         """
@@ -281,6 +293,68 @@ class SuperCatForm(CatForm):
 
         return output_model
 
+    def submit_close(self, form_data):
+        """
+        Submit the form.
+        If the form has a parent form, emit an event and return the parent form message.
+        Otherwise, return the submit output.
+
+        Args:
+            form_data: The form data to submit
+
+        Returns:
+            AgentOutput: The message to display after the form is submitted
+        """
+
+        if self.parent_form is not None:
+            self.parent_form.events.emit(
+                FormEvent.INSIDE_FORM_CLOSED,
+                {
+                    "form_data": form_data,
+                    "output": self.submit(form_data)
+                },
+                self.name
+            )
+
+            # Return message of the external (old) form
+            return self.parent_form.message()
+
+        # By default, return the submit output
+        return self.submit(form_data)
+
+    def start_sub_form(self, form_class):
+        """
+        Create and activate a new form, saving this form as the parent form
+        
+        Args:
+            form_class: The form class to instantiate
+            
+        Returns:
+            str: The initial message from the new form
+        """
+        # Create the new form instance
+        new_form = form_class(self.cat)
+        
+        # Set the parent form reference
+        new_form.parent_form= self
+        
+        # Activate the new form
+        self.cat.working_memory.active_form = new_form
+
+        # Emit event for the new form activation 
+        self.events.emit(
+            FormEvent.INSIDE_FORM_ACTIVE,
+            {
+                "instance": new_form
+            },
+            self.name
+        )
+        
+        log.debug(f"Started sub-form: {new_form.name} from parent: {self.name}")
+        
+        # Return the first message of the new form
+        return new_form.next()["output"]
+
     def next(self):
 
         if self._state == CatFormState.WAIT_CONFIRM:
@@ -293,7 +367,7 @@ class SuperCatForm(CatForm):
                     },
                     self.name
                 )
-                return self.submit(self._model)
+                return self.submit_close(self._model)
             else:
                 if self.check_exit_intent():
                     self._state = CatFormState.CLOSED
@@ -307,7 +381,7 @@ class SuperCatForm(CatForm):
                 else:
                     self._state = CatFormState.INCOMPLETE
 
-        if self.check_exit_intent():
+        if self.check_exit_intent() and not self._state == CatFormState.CLOSED:
             self._state = CatFormState.CLOSED
             self.events.emit(
                 FormEvent.FORM_CLOSED,
@@ -334,7 +408,7 @@ class SuperCatForm(CatForm):
                 self._state = CatFormState.WAIT_CONFIRM
             else:
                 self._state = CatFormState.CLOSED
-                return self.submit(self._model)
+                return self.submit_close(self._model)
 
         return self.message()
 
