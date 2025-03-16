@@ -29,10 +29,6 @@ class FormEvent(Enum):
     TOOL_EXECUTED = "tool_executed"
     TOOL_FAILED = "tool_failed"
 
-    # Inside form events
-    INSIDE_FORM_ACTIVE = "inside_form_active"
-    INSIDE_FORM_CLOSED = "inside_form_closed"
-
 
 class FormEventContext(BaseModel):
     timestamp: datetime

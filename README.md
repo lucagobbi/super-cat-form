@@ -16,7 +16,9 @@ SuperCatForm is a powerful, strongly opinionated, and flexible Cheshire Cat plug
 
 - **Form Events**: Hook into various stages of the form lifecycle to execute custom logic. For example, you can trigger actions when form extraction is completed, or when the form is submitted.
 
-- **JSON schema support** (Coming soon...): Streamline form validation and consistency with schema-based definitions.
+- **JSON schema support**: Streamline form validation and consistency with schema-based definitions.
+
+- **Nested forms**: Create nested forms that can be embedded within other forms, enabling a more complex and interactive user experience.
 
 
 ## Usage
@@ -115,6 +117,21 @@ class PizzaForm(SuperCatForm):
 ```
 
 ## Advanced Configuration 🔧
+
+### Fresh Start
+
+You can optionally clear the conversation history when starting a form by setting `fresh_start = True`
+
+```python
+
+@super_cat_form
+class YourForm(SuperCatForm):
+    ...
+    fresh_start = True
+
+```
+
+This is particularly useful when you want a clean start for a specific form without the context of previous conversations.
 
 ### Custom Prompts
 
@@ -308,4 +325,98 @@ class FormEventContext(BaseModel):
     event: FormEvent          # Event type
     data: Dict[str, Any]      # Event-specific payload
 
+```
+
+## Nested Forms
+
+SuperCatForm now supports creating multi-step workflows through nested forms. This allows you to break complex interactions into simpler, reusable components.
+
+- forms can launch other forms and automatically return when a sub-form completes
+- each form focuses on a specific part of data collection
+- launch sub-forms using the familiar form tool system
+- child forms can access and update parent form data
+
+### How to Use Nested Forms
+
+Create your sub-form class as a standard SuperCatForm.
+
+> Remember to remove the decorator `@super_cat_form` from the sub-form class if you don't want it to be triggered as a
+> regular form outside of its parent form.
+
+In your parent form, add a form tool that uses start_sub_form() to launch the sub-form
+When the sub-form completes, it automatically returns to the parent form
+
+```python
+from typing import List
+from pydantic import BaseModel, Field
+
+from cat.plugins.super_cat_form.super_cat_form import SuperCatForm, form_tool, super_cat_form
+from cat.log import log
+
+# ============= ADDRESS SUB-FORM =============
+
+class AddressModel(BaseModel):
+    street: str = Field(description="Street address")
+    city: str = Field(description="City name")
+    zip_code: str = Field(description="Postal/ZIP code")
+
+class AddressForm(SuperCatForm):
+    """Address collection form that can be launched from other forms"""
+    name = "AddressForm"
+    description = "Collect address information"
+    model_class = AddressModel
+    start_examples = [
+        "I want to enter an address",
+        "Let me add my address"
+    ]
+    stop_examples = [
+        "cancel address entry",
+        "stop address form"
+    ]
+
+    def submit(self, form_data):
+        # Access the parent form and update its data with the collected address
+        self.parent_form.form_data['address'] = form_data
+        return {
+            "output": f"Address saved: {form_data['street']}, {form_data['city']}, {form_data['zip_code']}"
+        }
+
+# ============= MAIN ORDER FORM =============
+
+class OrderItem(BaseModel):
+    name: str = Field(description="Item name")
+    quantity: int = Field(description="Number of items", gt=0)
+
+class OrderModel(BaseModel):
+    customer_name: str = Field(description="Customer's full name")
+    items: List[OrderItem] = Field(description="Items to order")
+    address: dict = Field(description="Customer's address")
+
+@super_cat_form
+class OrderForm(SuperCatForm):
+    name = "OrderForm"
+    description = "Process customer orders"
+    model_class = OrderModel
+    start_examples = [
+        "I want to place an order",
+        "Order some items"
+    ]
+    stop_examples = [
+        "cancel my order",
+        "stop ordering"
+    ]
+
+    @form_tool(return_direct=True, examples=["I need to add my address", "Enter my address"])
+    def collect_address(self):
+        """Collects the customer's address. User may ask: collect my address, enter delivery address"""
+        return self.start_sub_form(AddressForm)
+
+    def submit(self, form_data):
+        items_summary = ", ".join([f"{item['quantity']} x {item['name']}" for item in form_data['items']])
+        address = form_data.get('address', {})
+        address_str = f"{address.get('street', '')}, {address.get('city', '')}, {address.get('zip_code', '')}"
+
+        return {
+            "output": f"Order placed for {form_data['customer_name']}. Items: {items_summary}. Shipping to: {address_str}"
+        }
 ```
