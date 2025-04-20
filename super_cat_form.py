@@ -110,6 +110,7 @@ class SuperCatForm(CatForm):
         
         # Add handler for form exit to restore previous form
         self.events.on(FormEvent.FORM_CLOSED, self._restore_parent_form)
+        self.events.on(FormEvent.FORM_SUBMITTED, self._restore_parent_form)
 
     def _restore_parent_form(self, *args, **kwargs):
         """Restore parent form when this form is closed or submitted"""
@@ -335,9 +336,7 @@ class SuperCatForm(CatForm):
                     },
                     self.name
                 )
-                submission_result = self.submit(self._model)
-                self._restore_parent_form()
-                return submission_result
+                return self.submit(self._model)
 
             else:
                 if self.check_exit_intent():
@@ -379,6 +378,13 @@ class SuperCatForm(CatForm):
                 self._state = CatFormState.WAIT_CONFIRM
             else:
                 self._state = CatFormState.CLOSED
+                self.events.emit(
+                    FormEvent.FORM_SUBMITTED,
+                    {
+                        "form_data": self.form_data
+                    },
+                    self.name
+                )
                 return self.submit(self._model)
 
         return self.message()
