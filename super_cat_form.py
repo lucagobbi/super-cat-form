@@ -1,6 +1,6 @@
 import inspect
 from functools import wraps
-from typing import Dict, Optional, Type, List
+from typing import Dict, Optional, Type
 from pydantic import BaseModel, ValidationError
 
 from langchain_core.output_parsers import JsonOutputParser
@@ -54,6 +54,7 @@ class SuperCatForm(CatForm):
     # Flag for cleaning up conversation history - each form is a completely new conversation
     fresh_start = False
 
+    # Flag for forcing activation of the form despite the provided triggers
     force_activate = False
 
     def __init__(self, cat):
@@ -331,16 +332,7 @@ class SuperCatForm(CatForm):
 
         if self._state == CatFormState.WAIT_CONFIRM:
             if self.confirm():
-                self._state = CatFormState.CLOSED
-                self.events.emit(
-                    FormEvent.FORM_SUBMITTED,
-                    {
-                        "form_data": self.form_data
-                    },
-                    self.name
-                )
-                return self.submit(self._model)
-
+                self._handle_form_submission()
             else:
                 if self.check_exit_intent():
                     self._state = CatFormState.CLOSED
@@ -380,17 +372,21 @@ class SuperCatForm(CatForm):
             if self.ask_confirm:
                 self._state = CatFormState.WAIT_CONFIRM
             else:
-                self._state = CatFormState.CLOSED
-                self.events.emit(
-                    FormEvent.FORM_SUBMITTED,
-                    {
-                        "form_data": self.form_data
-                    },
-                    self.name
-                )
-                return self.submit(self._model)
+                return self._handle_form_submission()
 
         return self.message()
+
+    def _handle_form_submission(self):
+        """Handle form submission and event emission"""
+        self._state = CatFormState.CLOSED
+        self.events.emit(
+            FormEvent.FORM_SUBMITTED,
+            {
+                "form_data": self.form_data
+            },
+            self.name
+        )
+        return self.submit(self._model)
 
     def model_getter(self) -> Type[BaseModel]:
         """

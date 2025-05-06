@@ -131,6 +131,20 @@ class YourForm(SuperCatForm):
 
 ```
 
+### Force Activation
+
+You can optionally force the activation of a form by setting `force_activate = True`. 
+This will use the Cat `before_cat_reads_message` hook to force the activation of this form if there are not active form set in working memory.
+
+```python
+
+@super_cat_form
+class YourForm(SuperCatForm):
+    ...
+    force_activate = True
+
+```
+
 This is particularly useful when you want a clean start for a specific form without the context of previous conversations.
 
 ### Custom Prompts
