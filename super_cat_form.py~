@@ -19,7 +19,6 @@ from cat.log import log
 from cat import utils
 
 from cat.looking_glass.callbacks import ModelInteractionHandler
-from cat.mad_hatter.decorators import hook
 
 
 def form_tool(func=None, *, return_direct=False, examples=None):
@@ -426,11 +425,14 @@ def super_cat_form(form: SuperCatForm) -> SuperCatForm:
     return form
 
 
+from cat.mad_hatter.decorators import hook
+from cat.log import log
+
 @hook
 def before_cat_reads_message(user_message_json, cat):
     for form in cat.mad_hatter.forms:
-        if form.force_activate and cat.working_memory.active_form is None:
-            log.info(f"Forcing form activation: {form.name}")
+        if form.force_activate:
             new_form_instance = form(cat)
+            log.critical(f"Force form activation: {form.name} - {type(new_form_instance)}")
             cat.working_memory.active_form = new_form_instance
     return user_message_json
