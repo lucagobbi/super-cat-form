@@ -292,7 +292,7 @@ class HotelBookingForm(SuperCatForm):
 ```
 Examples:
 "What's on the menu?" → "get_menu" (explicit menu request)
-"I want to order pizza" → "form_compilation" (ordering intention)
+"I want to order pizza" → "form_completion" (ordering intention)
 "Hi there" → "no_action" (greeting)
 ```
 </details>

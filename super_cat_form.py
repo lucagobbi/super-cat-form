@@ -318,7 +318,7 @@ class SuperCatForm(CatForm):
         new_form = form_class(self.cat)
         
         # Set the parent form reference
-        new_form.parent_form= self
+        new_form.parent_form = self
         
         # Activate the new form
         self.cat.working_memory.active_form = new_form
